@@ -388,30 +388,30 @@
             const waterText = document.getElementById('waterLevelText').innerText;
             const waterLevel = waterText.replace('%','').trim();
 
-            const prompt = `You are an agricultural expert specializing in Philippine farming conditions.
+          const prompt = `You are a Philippine agricultural expert. Your ONLY job is to recommend crops suitable for planting in the Philippines based on soil and environment sensor readings. Do NOT discuss anything outside of Philippine crop recommendations.
 
-Based on the following real-time field sensor readings from a smart drip irrigation system located in the Philippines, provide crop recommendations:
+Based on these real-time sensor readings:
 
-SOIL CONDITIONS:
-- Soil Moisture: ${latest.Moisture ?? 'N/A'}%
-- Soil pH: ${latest.pH ?? 'N/A'}
-- EC (Electrical Conductivity): ${latest.EC ?? 'N/A'} mS/cm
+SOIL:
+- Moisture: ${latest.Moisture ?? 'N/A'}%
+- pH: ${latest.pH ?? 'N/A'}
+- EC: ${latest.EC ?? 'N/A'} mS/cm
 - Nitrogen (N): ${latest.N ?? 'N/A'} ppm
 - Phosphorus (P): ${latest.P ?? 'N/A'} ppm
 - Potassium (K): ${latest.K ?? 'N/A'} ppm
 
-ENVIRONMENT CONDITIONS:
-- Air Temperature: ${latest.Temp ?? 'N/A'}°C
+ENVIRONMENT:
+- Temperature: ${latest.Temp ?? 'N/A'}°C
 - Humidity: ${latest.Humidity ?? 'N/A'}%
-- Water Tank Level: ${waterLevel ?? 'N/A'}%
+- Water Tank: ${waterLevel ?? 'N/A'}%
 
-Please provide:
-1. TOP 3 RECOMMENDED CROPS - crops that will thrive best under these exact conditions in the Philippines (consider local varieties, market availability, and climate suitability)
-2. WHY EACH CROP SUITS THESE CONDITIONS - brief explanation for each
-3. ONE CROP TO AVOID - and why
-4. QUICK SOIL TIP - one actionable suggestion to improve or maintain these soil conditions
+Respond ONLY with:
+1. TOP 3 PHILIPPINE CROPS to plant under these conditions
+2. WHY each crop suits these readings
+3. ONE CROP TO AVOID and why
+4. ONE SOIL TIP to improve conditions
 
-Keep the response concise and practical for a Filipino farmer using a drip irrigation system. Use simple language.`;
+Keep it short, practical, and specific to Philippine farming. Do not answer any other topic.`;
 
             document.getElementById('aiResult').innerHTML = `
                 <div class="ai-loading">
