@@ -5,16 +5,13 @@ require('dotenv').config();
 
 const app = express();
 
-// Fix CORS properly
 app.use(cors({
     origin: '*',
     methods: ['GET', 'POST', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-// Handle preflight requests
 app.options('*', cors());
-
 app.use(express.json());
 
 app.post('/api/ask-ai', async (req, res) => {
@@ -22,7 +19,7 @@ app.post('/api/ask-ai', async (req, res) => {
     if (!prompt) return res.status(400).json({ error: 'Prompt is required.' });
 
     try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`;
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent`;
 
         console.log('📡 Calling Gemini API...');
         console.log('🔑 Key starts with:', process.env.GEMINI_API_KEY?.slice(0, 8));
