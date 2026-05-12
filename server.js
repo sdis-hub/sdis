@@ -12,33 +12,32 @@ app.post('/api/ask-ai', async (req, res) => {
     if (!prompt) return res.status(400).json({ error: 'Prompt is required.' });
 
     try {
-        const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${process.env.NVIDIA_API_KEY}`
-            },
-            body: JSON.stringify({
-                model: 'moonshotai/kimi-k2.6',
-                messages: [{ role: 'user', content: prompt }],
-                max_tokens: 1024,
-                temperature: 1.00,
-                top_p: 1.00,
-                stream: false
-            })
-        });
+        const response = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{ parts: [{ text: prompt }] }],
+                    generationConfig: {
+                        maxOutputTokens: 800,
+                        temperature: 0.7
+                    }
+                })
+            }
+        );
 
         const data = await response.json();
         if (data.error) return res.status(500).json({ error: data.error.message });
 
-        const text = data.choices?.[0]?.message?.content || 'No response.';
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No response.';
         res.json({ result: text });
 
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: 'Failed to reach NVIDIA API.' });
+        res.status(500).json({ error: 'Failed to reach Gemini API.' });
     }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`✅ Proxy server running on http://localhost:${PORT}`));
+app.listen(PORT, () => console.log(`✅ Proxy running on http://localhost:${PORT}`));
