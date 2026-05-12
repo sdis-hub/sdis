@@ -5,8 +5,9 @@ require('dotenv').config();
 
 const app = express();
 
+// 1. Robust CORS configuration
 app.use(cors({
-    origin: '*',
+    origin: '*', 
     methods: ['GET', 'POST', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
@@ -14,16 +15,21 @@ app.use(cors({
 app.options('*', cors());
 app.use(express.json());
 
+// 2. Health Check Route (Open this in your browser to test if Render is awake)
+app.get('/', (req, res) => {
+    res.send('✅ SDIS Proxy Server is Live and Running!');
+});
+
 app.post('/api/ask-ai', async (req, res) => {
     const { prompt } = req.body;
     if (!prompt) return res.status(400).json({ error: 'Prompt is required.' });
 
     try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent`;
+        // Changed to the stable 1.5-flash model
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent`;
 
         console.log('📡 Calling Gemini API...');
-        console.log('🔑 Key starts with:', process.env.GEMINI_API_KEY?.slice(0, 8));
-
+        
         const response = await fetch(url, {
             method: 'POST',
             headers: {
@@ -40,28 +46,26 @@ app.post('/api/ask-ai', async (req, res) => {
         });
 
         const data = await response.json();
-        console.log('📦 Gemini raw response:', JSON.stringify(data, null, 2));
 
         if (data.error) {
-            console.error('❌ Gemini error:', data.error);
+            console.error('❌ Gemini API Error:', data.error);
             return res.status(500).json({ error: data.error.message });
         }
 
         const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
 
         if (!text) {
-            console.error('❌ No text in response:', JSON.stringify(data));
-            return res.status(500).json({ error: 'Gemini returned empty response.' });
+            return res.status(500).json({ error: 'Gemini returned an empty response.' });
         }
 
-        console.log('✅ Success! Response length:', text.length);
+        console.log('✅ Success! Response sent to frontend.');
         res.json({ result: text });
 
     } catch (err) {
-        console.error('❌ Fetch error:', err.message);
-        res.status(500).json({ error: 'Failed to reach Gemini API: ' + err.message });
+        console.error('❌ Server Fetch Error:', err.message);
+        res.status(500).json({ error: 'Failed to reach Gemini: ' + err.message });
     }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`✅ Proxy running on http://localhost:${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Proxy running on port ${PORT}`));
