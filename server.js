@@ -12,30 +12,44 @@ app.post('/api/ask-ai', async (req, res) => {
     if (!prompt) return res.status(400).json({ error: 'Prompt is required.' });
 
     try {
-        const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
-            {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    contents: [{ parts: [{ text: prompt }] }],
-                    generationConfig: {
-                        maxOutputTokens: 800,
-                        temperature: 0.7
-                    }
-                })
-            }
-        );
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`;
+        
+        console.log('📡 Calling Gemini API...');
+        console.log('🔑 Key starts with:', process.env.GEMINI_API_KEY?.slice(0, 8));
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: {
+                    maxOutputTokens: 800,
+                    temperature: 0.7
+                }
+            })
+        });
 
         const data = await response.json();
-        if (data.error) return res.status(500).json({ error: data.error.message });
+        console.log('📦 Gemini raw response:', JSON.stringify(data, null, 2));
 
-        const text = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No response.';
+        if (data.error) {
+            console.error('❌ Gemini error:', data.error);
+            return res.status(500).json({ error: data.error.message });
+        }
+
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        
+        if (!text) {
+            console.error('❌ No text in response:', JSON.stringify(data));
+            return res.status(500).json({ error: 'Gemini returned empty response. Check logs.' });
+        }
+
+        console.log('✅ Success! Response length:', text.length);
         res.json({ result: text });
 
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Failed to reach Gemini API.' });
+        console.error('❌ Fetch error:', err.message);
+        res.status(500).json({ error: 'Failed to reach Gemini API: ' + err.message });
     }
 });
 
