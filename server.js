@@ -4,7 +4,17 @@ const fetch = require('node-fetch');
 require('dotenv').config();
 
 const app = express();
-app.use(cors());
+
+// Fix CORS properly
+app.use(cors({
+    origin: '*',
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
+// Handle preflight requests
+app.options('*', cors());
+
 app.use(express.json());
 
 app.post('/api/ask-ai', async (req, res) => {
@@ -44,7 +54,7 @@ app.post('/api/ask-ai', async (req, res) => {
 
         if (!text) {
             console.error('❌ No text in response:', JSON.stringify(data));
-            return res.status(500).json({ error: 'Gemini returned empty response. Check logs.' });
+            return res.status(500).json({ error: 'Gemini returned empty response.' });
         }
 
         console.log('✅ Success! Response length:', text.length);
