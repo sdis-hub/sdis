@@ -60,6 +60,13 @@
             font-size: 0.7rem;
         }
 
+        .logout-btn {
+            position: fixed; top: 10px; right: 10px; z-index: 1000;
+            background: #ff8787; border: 3px solid #000; padding: 8px 12px;
+            font-family: 'Press Start 2P'; font-size: 0.4rem; cursor: pointer;
+            box-shadow: 3px 3px 0px #000; display: none;
+        }
+
         /* --- DASHBOARD --- */
         #dashboardContent { padding: 20px; display: none; }
         h1 { font-size: 0.8rem; margin-bottom: 25px; text-align: center; line-height: 1.8; }
@@ -102,14 +109,15 @@
         #analyticsDisplay { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #fff; padding: 25px; border: 5px solid #000; z-index: 101; display: none; width: 90%; max-width: 400px; }
 
         /* --- AI CROP ADVISOR --- */
-        .ai-section {
-            max-width: 1200px; margin: 20px auto 0 auto;
-        }
+        .ai-section { max-width: 1200px; margin: 20px auto 0 auto; }
         .ai-card {
             background: #fff; border: 4px solid #000;
             box-shadow: 5px 5px 0px #adb5bd; padding: 20px;
         }
-        .ai-card h3 { font-size: 0.6rem; margin-bottom: 14px; color: #2b5a2b; }
+        .ai-card h3 { font-size: 0.6rem; margin-bottom: 8px; color: #2b5a2b; }
+        .ai-cooldown-info {
+            font-size: 0.38rem; color: #888; margin-bottom: 14px; line-height: 1.8;
+        }
         .ai-ask-btn {
             background: #2b8a3e; color: #fff; border: 3px solid #000;
             font-family: 'Press Start 2P'; font-size: 0.5rem;
@@ -151,6 +159,9 @@
 <body>
 
     <div id="batteryAlert">⚠️ CRITICAL POWER: CHECK BATTERY LEVELS! ⚠️</div>
+
+    <!-- LOGOUT BUTTON -->
+    <button class="logout-btn" id="logoutBtn" onclick="logout()">🚪 LOGOUT</button>
 
     <!-- LOGIN -->
     <div class="login-container" id="loginContainer">
@@ -216,6 +227,7 @@
         <div class="ai-section">
             <div class="ai-card">
                 <h3>🤖 AI CROP ADVISOR (PH)</h3>
+                <div class="ai-cooldown-info">⏱ 1 request per minute to avoid API quota limits</div>
                 <button class="ai-ask-btn" id="aiAskBtn" onclick="askAI()">
                     🌱 ANALYZE &amp; SUGGEST CROPS
                 </button>
@@ -249,15 +261,11 @@
     </div>
 
     <script>
-        // ============================================================
-        // CONFIGURATION
-        // Change PROXY_URL to your server address when deploying.
-        // If running locally: http://localhost:3000
-        // If deployed (e.g. Render, Railway): https://your-app.onrender.com
-        // ============================================================
         const PROXY_URL = 'https://sdis-uuy8.onrender.com';
-
         const VALID_LOGIN = { email: 'abcd@gmail.com', pass: '#Csu1234' };
+        const SESSION_KEY = 'sdis_logged_in';
+        const AI_COOLDOWN_MS = 60000; // 1 minute
+        let lastAIRequest = 0;
 
         const firebaseConfig = {
             apiKey: "AIzaSyBg39lHfAMW-ZuAlASM1zh6rmu_0qMQus4",
@@ -285,20 +293,40 @@
             EC: ' ms', N: ' ppm', P: ' ppm', K: ' ppm'
         };
 
+        // ============================================================
+        // PERSISTENT LOGIN — check session on page load
+        // ============================================================
+        window.addEventListener('load', () => {
+            if (sessionStorage.getItem(SESSION_KEY) === 'true') {
+                showDashboard();
+            }
+        });
+
         function attemptLogin() {
             const email = document.getElementById('emailInput').value;
             const pass  = document.getElementById('passwordInput').value;
             if (email === VALID_LOGIN.email && pass === VALID_LOGIN.pass) {
-                const lc = document.getElementById('loginContainer');
-                lc.style.opacity = '0';
-                setTimeout(() => {
-                    lc.style.display = 'none';
-                    document.getElementById('dashboardContent').style.display = 'block';
-                    startSync();
-                }, 800);
+                sessionStorage.setItem(SESSION_KEY, 'true'); // save session
+                showDashboard();
             } else {
                 alert('Invalid credentials.');
             }
+        }
+
+        function showDashboard() {
+            const lc = document.getElementById('loginContainer');
+            lc.style.opacity = '0';
+            setTimeout(() => {
+                lc.style.display = 'none';
+                document.getElementById('dashboardContent').style.display = 'block';
+                document.getElementById('logoutBtn').style.display = 'block';
+                startSync();
+            }, 800);
+        }
+
+        function logout() {
+            sessionStorage.removeItem(SESSION_KEY);
+            location.reload();
         }
 
         document.getElementById('passwordInput').addEventListener('keydown', e => {
@@ -379,16 +407,34 @@
         }
 
         async function askAI() {
+            // ⏱ Cooldown check
+            const now = Date.now();
+            const timeSinceLast = now - lastAIRequest;
+            const cooldownSec = Math.ceil((AI_COOLDOWN_MS - timeSinceLast) / 1000);
+
+            if (timeSinceLast < AI_COOLDOWN_MS && lastAIRequest !== 0) {
+                alert(`⚠️ Please wait ${cooldownSec} more seconds before requesting again.\n\nThis prevents exceeding the free AI quota (15 requests/min).`);
+                return;
+            }
+
             const latest = {};
             Object.keys(history).forEach(k => {
                 const d = history[k];
                 latest[k] = d.length > 0 ? d[d.length - 1] : null;
             });
 
+            // ⚠️ Warn if critical sensors have no data
+            const criticalSensors = ['Moisture', 'Temp', 'Humidity', 'pH', 'EC', 'N', 'P', 'K'];
+            const missingSensors = criticalSensors.filter(k => latest[k] === null);
+            if (missingSensors.length > 0) {
+                const proceed = confirm(`⚠️ WARNING: These sensors have no data yet:\n\n${missingSensors.join(', ')}\n\nAI recommendations may be inaccurate.\nProceed anyway?`);
+                if (!proceed) return;
+            }
+
             const waterText = document.getElementById('waterLevelText').innerText;
             const waterLevel = waterText.replace('%','').trim();
 
-          const prompt = `You are a Philippine agricultural expert. Your ONLY job is to recommend crops suitable for planting in the Philippines based on soil and environment sensor readings. Do NOT discuss anything outside of Philippine crop recommendations.
+            const prompt = `You are a Philippine agricultural expert. Your ONLY job is to recommend crops suitable for planting in the Philippines based on soil and environment sensor readings. Do NOT discuss anything outside of Philippine crop recommendations.
 
 Based on these real-time sensor readings:
 
@@ -423,10 +469,23 @@ Keep it short, practical, and specific to Philippine farming. Do not answer any 
 
             const btn = document.getElementById('aiAskBtn');
             btn.disabled = true;
-            btn.textContent = 'ANALYZING...';
+            lastAIRequest = now;
+
+            // ⏳ Countdown timer on button
+            let countdown = 60;
+            btn.textContent = `⏳ WAIT ${countdown}s...`;
+            const countdownInterval = setInterval(() => {
+                countdown--;
+                if (countdown > 0) {
+                    btn.textContent = `⏳ WAIT ${countdown}s...`;
+                } else {
+                    clearInterval(countdownInterval);
+                    btn.disabled = false;
+                    btn.textContent = '🌱 ANALYZE & SUGGEST CROPS';
+                }
+            }, 1000);
 
             try {
-                // Request goes to our secure proxy — API key never exposed in browser
                 const response = await fetch(`${PROXY_URL}/api/ask-ai`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -440,10 +499,7 @@ Keep it short, practical, and specific to Philippine farming. Do not answer any 
 
             } catch (err) {
                 document.getElementById('aiResult').innerText =
-                    '⚠️ ERROR: Could not reach AI service.\n\nMake sure the proxy server is running:\n  node server.js';
-            } finally {
-                btn.disabled = false;
-                btn.textContent = '🌱 ANALYZE & SUGGEST CROPS';
+                    '⚠️ ERROR: Could not reach AI service.\n\nCheck your internet connection or API access.';
             }
         }
     </script>
