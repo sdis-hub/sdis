@@ -160,10 +160,8 @@
 
     <div id="batteryAlert">⚠️ CRITICAL POWER: CHECK BATTERY LEVELS! ⚠️</div>
 
-    <!-- LOGOUT BUTTON -->
     <button class="logout-btn" id="logoutBtn" onclick="logout()">🚪 LOGOUT</button>
 
-    <!-- LOGIN -->
     <div class="login-container" id="loginContainer">
         <div class="login-box">
             <div style="margin-bottom: 20px; font-size: 0.8rem;">LOGIN</div>
@@ -173,7 +171,6 @@
         </div>
     </div>
 
-    <!-- DASHBOARD -->
     <div id="dashboardContent">
         <h1>💧 SMART DRIP IRRIGATION SYSTEM</h1>
 
@@ -223,7 +220,6 @@
             <div class="card sensor-card" data-variable="K"><h3>K</h3><div id="val-K" class="val-text">-- ppm</div></div>
         </div>
 
-        <!-- AI CROP ADVISOR -->
         <div class="ai-section">
             <div class="ai-card">
                 <h3>🤖 AI CROP ADVISOR (PH)</h3>
@@ -235,16 +231,10 @@
         </div>
     </div>
 
-    <!-- AI MODAL -->
     <div id="aiOverlay" onclick="hideAI()"></div>
     <div id="aiModal">
         <h3>🌾 AI CROP RECOMMENDATION</h3>
-        <div id="aiResult">
-            <div class="ai-loading">
-                <span>ANALYZING</span>
-                <div class="dot-anim"><span>●</span><span>●</span><span>●</span></div>
-            </div>
-        </div>
+        <div id="aiResult"></div>
         <button onclick="hideAI()" style="margin-top: 20px; width: 100%; font-family:'Press Start 2P'; font-size:0.45rem; padding:12px; border:3px solid #000; background:#ff8787; cursor:pointer;">CLOSE</button>
     </div>
 
@@ -261,10 +251,11 @@
     </div>
 
     <script>
+        // --- CONFIGURATION ---
         const PROXY_URL = 'https://sdis-uuy8.onrender.com';
         const VALID_LOGIN = { email: 'abcd@gmail.com', pass: '#Csu1234' };
         const SESSION_KEY = 'sdis_logged_in';
-        const AI_COOLDOWN_MS = 60000; // 1 minute
+        const AI_COOLDOWN_MS = 60000; 
         let lastAIRequest = 0;
 
         const firebaseConfig = {
@@ -293,9 +284,7 @@
             EC: ' ms', N: ' ppm', P: ' ppm', K: ' ppm'
         };
 
-        // ============================================================
-        // PERSISTENT LOGIN — check session on page load
-        // ============================================================
+        // --- AUTH LOGIC ---
         window.addEventListener('load', () => {
             if (sessionStorage.getItem(SESSION_KEY) === 'true') {
                 showDashboard();
@@ -306,7 +295,7 @@
             const email = document.getElementById('emailInput').value;
             const pass  = document.getElementById('passwordInput').value;
             if (email === VALID_LOGIN.email && pass === VALID_LOGIN.pass) {
-                sessionStorage.setItem(SESSION_KEY, 'true'); // save session
+                sessionStorage.setItem(SESSION_KEY, 'true');
                 showDashboard();
             } else {
                 alert('Invalid credentials.');
@@ -329,10 +318,7 @@
             location.reload();
         }
 
-        document.getElementById('passwordInput').addEventListener('keydown', e => {
-            if (e.key === 'Enter') attemptLogin();
-        });
-
+        // --- REALTIME SYNC ---
         function startSync() {
             database.ref('relay1').on('value', s => {
                 document.getElementById('pumpOnBtn').disabled  =  s.val();
@@ -356,7 +342,8 @@
                         if (history[key].length > 50) history[key].shift();
 
                         const unit = unitMap[key] || '';
-                        document.getElementById(`val-${key}`).innerText = `${val}${unit}`;
+                        const el = document.getElementById(`val-${key}`);
+                        if(el) el.innerText = `${val}${unit}`;
 
                         if (key === 'CentralBatt' && val < 12) alertNeeded = true;
                         if (key === 'SensorBatt'  && val < 5)  alertNeeded = true;
@@ -373,11 +360,13 @@
             });
         }
 
+        // --- CONTROLS ---
         document.getElementById('pumpOnBtn').onclick  = () => database.ref('relay1').set(true);
         document.getElementById('pumpOffBtn').onclick = () => database.ref('relay1').set(false);
         document.getElementById('valveOnBtn').onclick  = () => database.ref('relay2').set(true);
         document.getElementById('valveOffBtn').onclick = () => database.ref('relay2').set(false);
 
+        // --- ANALYTICS ---
         document.querySelectorAll('.sensor-card').forEach(card => {
             card.onclick = () => {
                 const v = card.dataset.variable;
@@ -406,84 +395,45 @@
             document.getElementById('aiModal').style.display   = 'none';
         }
 
+        // --- AI LOGIC ---
         async function askAI() {
-            // ⏱ Cooldown check
             const now = Date.now();
             const timeSinceLast = now - lastAIRequest;
-            const cooldownSec = Math.ceil((AI_COOLDOWN_MS - timeSinceLast) / 1000);
-
+            
             if (timeSinceLast < AI_COOLDOWN_MS && lastAIRequest !== 0) {
-                alert(`⚠️ Please wait ${cooldownSec} more seconds before requesting again.\n\nThis prevents exceeding the free AI quota (15 requests/min).`);
+                const cooldownSec = Math.ceil((AI_COOLDOWN_MS - timeSinceLast) / 1000);
+                alert(`⚠️ Wait ${cooldownSec}s before next request.`);
                 return;
             }
 
             const latest = {};
             Object.keys(history).forEach(k => {
                 const d = history[k];
-                latest[k] = d.length > 0 ? d[d.length - 1] : null;
+                latest[k] = d.length > 0 ? d[d.length - 1] : 'N/A';
             });
-
-            // ⚠️ Warn if critical sensors have no data
-            const criticalSensors = ['Moisture', 'Temp', 'Humidity', 'pH', 'EC', 'N', 'P', 'K'];
-            const missingSensors = criticalSensors.filter(k => latest[k] === null);
-            if (missingSensors.length > 0) {
-                const proceed = confirm(`⚠️ WARNING: These sensors have no data yet:\n\n${missingSensors.join(', ')}\n\nAI recommendations may be inaccurate.\nProceed anyway?`);
-                if (!proceed) return;
-            }
 
             const waterText = document.getElementById('waterLevelText').innerText;
             const waterLevel = waterText.replace('%','').trim();
 
-            const prompt = `You are a Philippine agricultural expert. Your ONLY job is to recommend crops suitable for planting in the Philippines based on soil and environment sensor readings. Do NOT discuss anything outside of Philippine crop recommendations.
+            const prompt = `You are a Philippine agricultural expert. Based on these sensor readings:
+            Moisture: ${latest.Moisture}%, Temp: ${latest.Temp}°C, pH: ${latest.pH}, 
+            NPK: ${latest.N}-${latest.P}-${latest.K}, Water Tank: ${waterLevel}%.
+            Suggest 3 crops, why, what to avoid, and 1 soil tip. Keep it practical for PH farmers.`;
 
-Based on these real-time sensor readings:
-
-SOIL:
-- Moisture: ${latest.Moisture ?? 'N/A'}%
-- pH: ${latest.pH ?? 'N/A'}
-- EC: ${latest.EC ?? 'N/A'} mS/cm
-- Nitrogen (N): ${latest.N ?? 'N/A'} ppm
-- Phosphorus (P): ${latest.P ?? 'N/A'} ppm
-- Potassium (K): ${latest.K ?? 'N/A'} ppm
-
-ENVIRONMENT:
-- Temperature: ${latest.Temp ?? 'N/A'}°C
-- Humidity: ${latest.Humidity ?? 'N/A'}%
-- Water Tank: ${waterLevel ?? 'N/A'}%
-
-Respond ONLY with:
-1. TOP 3 PHILIPPINE CROPS to plant under these conditions
-2. WHY each crop suits these readings
-3. ONE CROP TO AVOID and why
-4. ONE SOIL TIP to improve conditions
-
-Keep it short, practical, and specific to Philippine farming. Do not answer any other topic.`;
-
-            document.getElementById('aiResult').innerHTML = `
+            // UI feedback
+            const aiResultDiv = document.getElementById('aiResult');
+            aiResultDiv.innerHTML = `
                 <div class="ai-loading">
-                    <span>ANALYZING SOIL DATA</span>
+                    <span>ANALYZING...</span>
                     <div class="dot-anim"><span>●</span><span>●</span><span>●</span></div>
                 </div>`;
+            
             document.getElementById('aiOverlay').style.display = 'block';
             document.getElementById('aiModal').style.display   = 'block';
 
             const btn = document.getElementById('aiAskBtn');
             btn.disabled = true;
             lastAIRequest = now;
-
-            // ⏳ Countdown timer on button
-            let countdown = 60;
-            btn.textContent = `⏳ WAIT ${countdown}s...`;
-            const countdownInterval = setInterval(() => {
-                countdown--;
-                if (countdown > 0) {
-                    btn.textContent = `⏳ WAIT ${countdown}s...`;
-                } else {
-                    clearInterval(countdownInterval);
-                    btn.disabled = false;
-                    btn.textContent = '🌱 ANALYZE & SUGGEST CROPS';
-                }
-            }, 1000);
 
             try {
                 const response = await fetch(`${PROXY_URL}/api/ask-ai`, {
@@ -493,13 +443,24 @@ Keep it short, practical, and specific to Philippine farming. Do not answer any 
                 });
 
                 const data = await response.json();
-                if (data.error) throw new Error(data.error);
+                if (!response.ok) throw new Error(data.error || 'Server error');
 
-                document.getElementById('aiResult').innerText = data.result;
+                aiResultDiv.innerText = data.result;
 
             } catch (err) {
-                document.getElementById('aiResult').innerText =
-                    '⚠️ ERROR: Could not reach AI service.\n\nCheck your internet connection or API access.';
+                console.error("AI Request Failed:", err);
+                aiResultDiv.innerHTML = `<span style="color:#ff0000">⚠️ ERROR: ${err.message}</span><br><br>
+                Please verify if your server at <a href="${PROXY_URL}" target="_blank">${PROXY_URL}</a> is awake.`;
+            } finally {
+                let countdown = 60;
+                const interval = setInterval(() => {
+                    btn.textContent = `⏳ WAIT ${--countdown}s...`;
+                    if (countdown <= 0) {
+                        clearInterval(interval);
+                        btn.disabled = false;
+                        btn.textContent = '🌱 ANALYZE & SUGGEST CROPS';
+                    }
+                }, 1000);
             }
         }
     </script>
