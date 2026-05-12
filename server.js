@@ -12,14 +12,17 @@ app.post('/api/ask-ai', async (req, res) => {
     if (!prompt) return res.status(400).json({ error: 'Prompt is required.' });
 
     try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`;
-        
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-latest:generateContent`;
+
         console.log('📡 Calling Gemini API...');
         console.log('🔑 Key starts with:', process.env.GEMINI_API_KEY?.slice(0, 8));
 
         const response = await fetch(url, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'X-goog-api-key': process.env.GEMINI_API_KEY
+            },
             body: JSON.stringify({
                 contents: [{ parts: [{ text: prompt }] }],
                 generationConfig: {
@@ -38,7 +41,7 @@ app.post('/api/ask-ai', async (req, res) => {
         }
 
         const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        
+
         if (!text) {
             console.error('❌ No text in response:', JSON.stringify(data));
             return res.status(500).json({ error: 'Gemini returned empty response. Check logs.' });
