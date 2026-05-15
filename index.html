@@ -105,8 +105,36 @@
         button:disabled { opacity: 0.3; filter: grayscale(1); }
 
         /* --- ANALYTICS MODAL --- */
-        #analyticsOverlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 100; display: none; }
-        #analyticsDisplay { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #fff; padding: 25px; border: 5px solid #000; z-index: 101; display: none; width: 90%; max-width: 400px; }
+        #analyticsOverlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8); z-index: 100; display: none;
+        }
+        #analyticsDisplay {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: #fff; padding: 25px; border: 5px solid #000;
+            z-index: 101; display: none;
+            width: 92%; max-width: 500px;
+            max-height: 90vh; overflow-y: auto;
+        }
+
+        /* Line chart canvas */
+        #analyticsChart {
+            width: 100%;
+            height: 160px;
+            display: block;
+            border: 3px solid #000;
+            background: #f8f9fa;
+            margin-bottom: 16px;
+        }
+
+        .analytics-stats {
+            font-size: 0.55rem;
+            line-height: 2;
+            border: 3px solid #000;
+            padding: 10px 14px;
+            background: #f8f9fa;
+            margin-bottom: 14px;
+        }
 
         /* --- AI CROP ADVISOR --- */
         .ai-section { max-width: 1200px; margin: 20px auto 0 auto; }
@@ -214,10 +242,10 @@
             <div class="card sensor-card" data-variable="Temp"><h3>TEMP</h3><div id="val-Temp" class="val-text">--°C</div></div>
             <div class="card sensor-card" data-variable="Humidity"><h3>HUMIDITY</h3><div id="val-Humidity" class="val-text">--%</div></div>
             <div class="card sensor-card" data-variable="pH"><h3>pH</h3><div id="val-pH" class="val-text">--</div></div>
-            <div class="card sensor-card" data-variable="EC"><h3>EC</h3><div id="val-EC" class="val-text">-- ms</div></div>
-            <div class="card sensor-card" data-variable="N"><h3>N</h3><div id="val-N" class="val-text">-- ppm</div></div>
-            <div class="card sensor-card" data-variable="P"><h3>P</h3><div id="val-P" class="val-text">-- ppm</div></div>
-            <div class="card sensor-card" data-variable="K"><h3>K</h3><div id="val-K" class="val-text">-- ppm</div></div>
+            <div class="card sensor-card" data-variable="EC"><h3>EC</h3><div id="val-EC" class="val-text">-- dS/m</div></div>
+            <div class="card sensor-card" data-variable="N"><h3>N</h3><div id="val-N" class="val-text">-- mg/kg</div></div>
+            <div class="card sensor-card" data-variable="P"><h3>P</h3><div id="val-P" class="val-text">-- mg/kg</div></div>
+            <div class="card sensor-card" data-variable="K"><h3>K</h3><div id="val-K" class="val-text">-- mg/kg</div></div>
         </div>
 
         <div class="ai-section">
@@ -240,14 +268,20 @@
 
     <div id="analyticsOverlay" onclick="hideAnalytics()"></div>
     <div id="analyticsDisplay">
-        <h3 id="analyticsTitle" style="font-size: 0.7rem; margin-bottom: 15px;">ANALYSIS</h3>
-        <div style="font-size: 0.55rem; line-height: 2;">
-            <p>CURRENT: <span id="analyticsCurrent">--</span></p>
-            <p>MINIMUM: <span id="analyticsMin">--</span></p>
-            <p>MAXIMUM: <span id="analyticsMax">--</span></p>
-            <p>AVERAGE: <span id="analyticsAvg">--</span></p>
+        <h3 id="analyticsTitle" style="font-size: 0.7rem; margin-bottom: 14px;">ANALYSIS</h3>
+
+        <!-- Line Graph Canvas -->
+        <canvas id="analyticsChart"></canvas>
+
+        <!-- Stats retained -->
+        <div class="analytics-stats">
+            <p>CURRENT: <span id="analyticsCurrent">0</span></p>
+            <p>MINIMUM: <span id="analyticsMin">0</span></p>
+            <p>MAXIMUM: <span id="analyticsMax">0</span></p>
+            <p>AVERAGE: <span id="analyticsAvg">0.0</span></p>
         </div>
-        <button onclick="hideAnalytics()" style="margin-top: 20px; width: 100%;">CLOSE</button>
+
+        <button onclick="hideAnalytics()" style="width: 100%; padding: 12px; font-family:'Press Start 2P'; font-size:0.45rem; border:3px solid #000; background:#ff8787; cursor:pointer;">CLOSE</button>
     </div>
 
     <script>
@@ -277,11 +311,22 @@
             CentralBatt: [], SensorBatt: []
         };
 
+        // Updated units: EC → dS/m, N/P/K → mg/kg
         const unitMap = {
             CentralBatt: ' V', SensorBatt: ' V',
             Moisture: '%', Humidity: '%',
             Temp: '°C', pH: '',
-            EC: ' ms', N: ' ppm', P: ' ppm', K: ' ppm'
+            EC: ' dS/m',
+            N: ' mg/kg', P: ' mg/kg', K: ' mg/kg'
+        };
+
+        // Color per variable for the chart line
+        const colorMap = {
+            CentralBatt: '#f59f00', SensorBatt: '#f08c00',
+            Moisture: '#339af0', Humidity: '#74c0fc',
+            Temp: '#ff6b6b', pH: '#a9e34b',
+            EC: '#cc5de8',
+            N: '#51cf66', P: '#ffa94d', K: '#ff922b'
         };
 
         // --- AUTH LOGIC ---
@@ -366,22 +411,157 @@
         document.getElementById('valveOnBtn').onclick  = () => database.ref('relay2').set(true);
         document.getElementById('valveOffBtn').onclick = () => database.ref('relay2').set(false);
 
+        // =============================================
+        // --- LINE GRAPH RENDERER (pure canvas) ---
+        // =============================================
+        function drawLineChart(canvas, data, unit, color) {
+            const ctx = canvas.getContext('2d');
+            const W = canvas.offsetWidth;
+            const H = canvas.offsetHeight;
+            canvas.width  = W;
+            canvas.height = H;
+
+            const PAD = { top: 14, right: 14, bottom: 28, left: 44 };
+            const chartW = W - PAD.left - PAD.right;
+            const chartH = H - PAD.top  - PAD.bottom;
+
+            ctx.clearRect(0, 0, W, H);
+
+            // Background
+            ctx.fillStyle = '#f8f9fa';
+            ctx.fillRect(0, 0, W, H);
+
+            // If no data (or single point), show placeholder
+            if (!data || data.length === 0) {
+                ctx.fillStyle = '#aaa';
+                ctx.font = '10px monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText('NO DATA YET', W / 2, H / 2);
+                return;
+            }
+
+            const minVal = Math.min(...data);
+            const maxVal = Math.max(...data);
+            const range  = maxVal - minVal || 1;
+
+            // Grid lines (4 horizontal)
+            ctx.strokeStyle = '#ddd';
+            ctx.lineWidth = 1;
+            for (let i = 0; i <= 4; i++) {
+                const y = PAD.top + (chartH / 4) * i;
+                ctx.beginPath();
+                ctx.moveTo(PAD.left, y);
+                ctx.lineTo(PAD.left + chartW, y);
+                ctx.stroke();
+
+                // Y-axis labels
+                const labelVal = maxVal - (range / 4) * i;
+                ctx.fillStyle = '#555';
+                ctx.font = '8px monospace';
+                ctx.textAlign = 'right';
+                ctx.fillText(labelVal.toFixed(1), PAD.left - 4, y + 3);
+            }
+
+            // X-axis labels (show last 5 indices)
+            ctx.fillStyle = '#555';
+            ctx.font = '7px monospace';
+            ctx.textAlign = 'center';
+            const step = Math.max(1, Math.floor(data.length / 5));
+            for (let i = 0; i < data.length; i += step) {
+                const x = PAD.left + (i / (data.length - 1 || 1)) * chartW;
+                ctx.fillText(`#${i + 1}`, x, H - PAD.bottom + 14);
+            }
+
+            // Shaded area under the line
+            ctx.beginPath();
+            data.forEach((v, i) => {
+                const x = PAD.left + (i / (data.length - 1 || 1)) * chartW;
+                const y = PAD.top  + (1 - (v - minVal) / range) * chartH;
+                i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+            });
+            const lastX = PAD.left + chartW;
+            ctx.lineTo(lastX, PAD.top + chartH);
+            ctx.lineTo(PAD.left, PAD.top + chartH);
+            ctx.closePath();
+            ctx.fillStyle = color + '22';
+            ctx.fill();
+
+            // Main line
+            ctx.beginPath();
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 2.5;
+            ctx.lineJoin = 'round';
+            ctx.lineCap  = 'round';
+            data.forEach((v, i) => {
+                const x = PAD.left + (i / (data.length - 1 || 1)) * chartW;
+                const y = PAD.top  + (1 - (v - minVal) / range) * chartH;
+                i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+            });
+            ctx.stroke();
+
+            // Dots at each point (small)
+            data.forEach((v, i) => {
+                const x = PAD.left + (i / (data.length - 1 || 1)) * chartW;
+                const y = PAD.top  + (1 - (v - minVal) / range) * chartH;
+                ctx.beginPath();
+                ctx.arc(x, y, 3, 0, Math.PI * 2);
+                ctx.fillStyle = '#fff';
+                ctx.fill();
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            });
+
+            // Highlight last point (larger dot + value label)
+            if (data.length > 0) {
+                const lx = PAD.left + chartW;
+                const lv = data[data.length - 1];
+                const ly = PAD.top + (1 - (lv - minVal) / range) * chartH;
+                ctx.beginPath();
+                ctx.arc(lx, ly, 5, 0, Math.PI * 2);
+                ctx.fillStyle = color;
+                ctx.fill();
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+
+                ctx.fillStyle = '#000';
+                ctx.font = 'bold 9px monospace';
+                ctx.textAlign = 'right';
+                ctx.fillText(lv.toFixed(1) + unit.trim(), lx, ly - 8);
+            }
+        }
+
         // --- ANALYTICS ---
         document.querySelectorAll('.sensor-card').forEach(card => {
             card.onclick = () => {
                 const v = card.dataset.variable;
                 const d = history[v];
-                if (!d || d.length === 0) return;
-
                 const unit = unitMap[v] || '';
-                document.getElementById('analyticsTitle').innerText = v.toUpperCase() + " LOG";
-                document.getElementById('analyticsCurrent').innerText = d[d.length - 1] + unit;
-                document.getElementById('analyticsMin').innerText     = Math.min(...d) + unit;
-                document.getElementById('analyticsMax').innerText     = Math.max(...d) + unit;
-                document.getElementById('analyticsAvg').innerText     = (d.reduce((a, b) => a + b, 0) / d.length).toFixed(1) + unit;
+                const color = colorMap[v] || '#339af0';
+
+                // Stats (show 0 if no data yet, as requested)
+                const current = d && d.length > 0 ? d[d.length - 1] : 0;
+                const minVal  = d && d.length > 0 ? Math.min(...d) : 0;
+                const maxVal  = d && d.length > 0 ? Math.max(...d) : 0;
+                const avg     = d && d.length > 0
+                    ? (d.reduce((a, b) => a + b, 0) / d.length)
+                    : 0;
+
+                document.getElementById('analyticsTitle').innerText   = v.toUpperCase() + " LOG";
+                document.getElementById('analyticsCurrent').innerText = current + unit;
+                document.getElementById('analyticsMin').innerText     = minVal + unit;
+                document.getElementById('analyticsMax').innerText     = maxVal + unit;
+                document.getElementById('analyticsAvg').innerText     = avg.toFixed(1) + unit;
 
                 document.getElementById('analyticsOverlay').style.display = 'block';
                 document.getElementById('analyticsDisplay').style.display = 'block';
+
+                // Draw chart after modal is visible (so offsetWidth is accurate)
+                requestAnimationFrame(() => {
+                    const canvas = document.getElementById('analyticsChart');
+                    drawLineChart(canvas, d || [], unit, color);
+                });
             };
         });
 
@@ -417,10 +597,9 @@
 
             const prompt = `You are a Philippine agricultural expert. Based on these sensor readings:
             Moisture: ${latest.Moisture}%, Temp: ${latest.Temp}°C, pH: ${latest.pH}, 
-            NPK: ${latest.N}-${latest.P}-${latest.K}, Water Tank: ${waterLevel}%.
+            NPK: ${latest.N}-${latest.P}-${latest.K} mg/kg, EC: ${latest.EC} dS/m, Water Tank: ${waterLevel}%.
             Suggest 3 crops, why, what to avoid, and 1 soil tip. Keep it practical for PH farmers.`;
 
-            // UI feedback
             const aiResultDiv = document.getElementById('aiResult');
             aiResultDiv.innerHTML = `
                 <div class="ai-loading">
